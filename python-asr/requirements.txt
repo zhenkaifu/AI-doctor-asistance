@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+websockets
+numpy
+faster-whisper
+pyannote.audio
+torch
+huggingface-hub<1.0
