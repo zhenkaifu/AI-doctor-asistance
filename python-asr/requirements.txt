@@ -2,7 +2,7 @@ fastapi
 uvicorn
 websockets
 numpy
-faster-whisper
+funasr
 pyannote.audio
 torch
 huggingface-hub<1.0
