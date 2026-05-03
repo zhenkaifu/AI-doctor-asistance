@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { WhisperModule } from './whisper/whisper.module';
+import { AsrModule } from './asr/asr.module';
 
 @Module({
-  imports: [WhisperModule],
+  imports: [AsrModule],
   controllers: [AppController],
   providers: [AppService],
 })

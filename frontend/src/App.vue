@@ -11,7 +11,7 @@ import vueLogo from './assets/vue.svg';
       <img :src="vueLogo" class="logo vue" alt="Vue logo" />
     </div>
     <h1>语音实时转写</h1>
-    <p>本地 Whisper 引擎 · NestJS 中继 · 浏览器录音</p>
+    <p>本地 FunASR 引擎 · NestJS 中继 · 浏览器录音</p>
   </header>
 
   <main>
@@ -19,7 +19,7 @@ import vueLogo from './assets/vue.svg';
   </main>
 
   <footer class="app-footer">
-    <p>© 2026 AI Project · 本地 Whisper 语音识别</p>
+    <p>© 2026 AI Project · 本地 FunASR 语音识别</p>
   </footer>
 </template>
 
@@ -62,6 +62,7 @@ h1 {
   margin: 0.5rem 0;
   background: linear-gradient(45deg, var(--accent), #42b883);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
