@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { WhisperService, WhisperTranscriptionResult } from './whisper.service';
+import { AsrService, AsrTranscriptionResult } from './asr.service';
 import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
@@ -22,17 +22,17 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly whisperService: WhisperService) {}
+  constructor(private readonly asrService: AsrService) {}
 
   /**
-   * 当客户端连接时，建立与 WLK 的会话
+   * 当客户端连接时，建立与 ASR 的会话
    */
   async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
     
     try {
-      // 等待与 WLK 的连接真正建立
-      await this.whisperService.createSession(client.id, (result: WhisperTranscriptionResult) => {
+      // 等待与 ASR 的连接真正建立
+      await this.asrService.createSession(client.id, (result: AsrTranscriptionResult) => {
         // 实时回传转写结果给前端
         client.emit('transcription', result);
       });
@@ -41,7 +41,7 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('ready');
       this.logger.log(`Session ready for client: ${client.id}`);
     } catch (err) {
-      this.logger.error(`Failed to create session for client ${client.id}: ${err.message}`);
+      this.logger.error(`Failed to create session for client ${client.id}: ${(err as Error).message}`);
       client.emit('error', 'Failed to initialize AI engine connection');
       client.disconnect();
     }
@@ -53,17 +53,17 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('audio-chunk')
   handleAudioChunk(@MessageBody() data: Buffer, @ConnectedSocket() client: Socket) {
     if (Buffer.isBuffer(data)) {
-      this.whisperService.sendAudio(client.id, data);
+      this.asrService.sendAudio(client.id, data);
     } else {
       this.logger.warn(`Received non-buffer data from client ${client.id}`);
     }
   }
 
   /**
-   * 客户端断开连接时，关闭与 WLK 的会话
+   * 客户端断开连接时，关闭与 ASR 的会话
    */
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
-    this.whisperService.closeSession(client.id);
+    this.asrService.closeSession(client.id);
   }
 }

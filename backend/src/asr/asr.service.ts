@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { WebSocket as WSClient } from 'ws';
 
-export interface WhisperTranscriptionResult {
+export interface AsrTranscriptionResult {
   speaker: string;
   text: string;
   start: number;
@@ -9,7 +9,7 @@ export interface WhisperTranscriptionResult {
   isFinal: boolean;
 }
 
-export interface WLKRawResult {
+export interface AsrRawResult {
   text: string;
   segments?: Array<{
     start: number;
@@ -21,33 +21,33 @@ export interface WLKRawResult {
 }
 
 @Injectable()
-export class WhisperService implements OnModuleDestroy {
-  private readonly logger = new Logger(WhisperService.name);
-  private readonly wlkUrl = 'ws://localhost:8001/asr'; // 连接到 Python ASR 服务
+export class AsrService implements OnModuleDestroy {
+  private readonly logger = new Logger(AsrService.name);
+  private readonly asrUrl = 'ws://localhost:8001/asr'; // 连接到 Python ASR 服务
   private connections = new Map<string, WSClient>();
   private audioBuffers = new Map<string, Buffer[]>(); // 临时缓冲区，存储连接就绪前的音频
 
   /**
-   * 初始化与 WLK 的连接，返回 Promise 确保连接就绪后再返回
+   * 初始化与 ASR 的连接，返回 Promise 确保连接就绪后再返回
    */
-  async createSession(clientId: string, onResult: (result: WhisperTranscriptionResult) => void): Promise<void> {
+  async createSession(clientId: string, onResult: (result: AsrTranscriptionResult) => void): Promise<void> {
     if (this.connections.has(clientId)) {
       this.closeSession(clientId);
     }
 
     return new Promise((resolve, reject) => {
-      const ws = new WSClient(this.wlkUrl);
+      const ws = new WSClient(this.asrUrl);
       this.audioBuffers.set(clientId, []);
 
       // 连接超时处理 (5秒)
       const timeout = setTimeout(() => {
         ws.terminate();
-        reject(new Error(`WLK connection timeout for client ${clientId}`));
+        reject(new Error(`ASR connection timeout for client ${clientId}`));
       }, 5000);
 
       ws.on('open', () => {
         clearTimeout(timeout);
-        this.logger.log(`Connected to WLK for client: ${clientId}`);
+        this.logger.log(`Connected to ASR for client: ${clientId}`);
         this.connections.set(clientId, ws);
         
         // 连接建立后，立即发送缓冲区中的数据
@@ -86,19 +86,19 @@ export class WhisperService implements OnModuleDestroy {
             } as any);
           }
         } catch (e) {
-          this.logger.error(`Error parsing WLK message: ${e.message}`);
+          this.logger.error(`Error parsing ASR message: ${(e as Error).message}`);
         }
       });
 
       ws.on('error', (err) => {
         clearTimeout(timeout);
-        this.logger.error(`WLK connection error for client ${clientId}: ${err.message}`);
+        this.logger.error(`ASR connection error for client ${clientId}: ${err.message}`);
         this.audioBuffers.delete(clientId);
         reject(err);
       });
 
       ws.on('close', () => {
-        this.logger.log(`WLK connection closed for client: ${clientId}`);
+        this.logger.log(`ASR connection closed for client: ${clientId}`);
         this.connections.delete(clientId);
         this.audioBuffers.delete(clientId);
       });
