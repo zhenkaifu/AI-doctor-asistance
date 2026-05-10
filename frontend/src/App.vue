@@ -1,26 +1,8 @@
 <script setup lang="ts">
-import WhisperTranscriber from './components/WhisperTranscriber.vue';
-import viteLogo from './assets/vite.svg';
-import vueLogo from './assets/vue.svg';
 </script>
 
 <template>
-  <header class="app-header">
-    <div class="logos">
-      <img :src="viteLogo" class="logo vite" alt="Vite logo" />
-      <img :src="vueLogo" class="logo vue" alt="Vue logo" />
-    </div>
-    <h1>语音实时转写</h1>
-    <p>本地 FunASR 引擎 · NestJS 中继 · 浏览器录音</p>
-  </header>
-
-  <main>
-    <WhisperTranscriber />
-  </main>
-
-  <footer class="app-footer">
-    <p>© 2026 AI Project · 本地 FunASR 语音识别</p>
-  </footer>
+  <router-view />
 </template>
 
 <style>

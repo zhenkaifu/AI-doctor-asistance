@@ -376,6 +376,8 @@ onUnmounted(() => {
   adviceAbort?.abort();
   stopTranscription();
 });
+
+defineExpose({ transcriptionList, adviceText });
 </script>
 
 <template>
@@ -397,6 +399,7 @@ onUnmounted(() => {
         <span class="icon">📋</span>
         {{ generatingAdvice ? '生成中…' : '意见' }}
       </button>
+      <slot name="extra-controls" />
       <div class="status-badge" :class="`tone-${statusTone}`">
         {{ statusMessage }}
       </div>
