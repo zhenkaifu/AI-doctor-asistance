@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import WhisperTranscriber from '../components/WhisperTranscriber.vue'
@@ -27,6 +27,53 @@ function calcAge(dateOfBirth: string): number | null {
 }
 
 const patientAge = calcAge(patientDateOfBirth)
+
+// ---- 以往病例 ----
+interface MedicalRecord {
+  id: string
+  visit_date: string
+  department: string
+  chief_complaint: string
+  diagnosis: string
+  present_illness: string | null
+  past_history: string | null
+  physical_exam: string | null
+  temperature: number | null
+  pulse: number | null
+  respiration: number | null
+  blood_pressure: string | null
+  auxiliary_exam: string | null
+  medication: string | null
+  medical_advice: string | null
+  rest_days: number | null
+  doctor_name: string
+}
+
+const medicalRecords = ref<MedicalRecord[]>([])
+const fetchingRecords = ref(false)
+const expandedRecordId = ref<string | null>(null)
+
+async function fetchMedicalRecords() {
+  if (!patientId) return
+  fetchingRecords.value = true
+  const { data, error } = await supabase
+    .from('medical_records')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('visit_date', { ascending: false })
+  fetchingRecords.value = false
+  if (!error && data) {
+    medicalRecords.value = data as MedicalRecord[]
+  }
+}
+
+function toggleRecordExpand(id: string) {
+  expandedRecordId.value = expandedRecordId.value === id ? null : id
+}
+
+onMounted(() => {
+  fetchMedicalRecords()
+})
 
 // ---- 转写组件引用 ----
 const transcriberRef = ref<InstanceType<typeof WhisperTranscriber> | null>(null)
@@ -227,6 +274,7 @@ async function confirmSave() {
 
   saveSuccess.value = true
   showReviewModal.value = false
+  fetchMedicalRecords()  // 刷新以往病例列表
 }
 
 function goBack() {
@@ -246,6 +294,69 @@ function goBack() {
         <span class="tag-name">{{ patientName }}</span>
       </div>
     </header>
+
+    <!-- 以往病例 -->
+    <section v-if="medicalRecords.length > 0" class="records-section">
+      <h3 class="records-title">📋 以往病例（{{ medicalRecords.length }}）</h3>
+      <div class="records-table-wrap">
+        <table class="records-table">
+          <thead>
+            <tr>
+              <th>就诊日期</th>
+              <th>科室</th>
+              <th>主诉</th>
+              <th>诊断</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="rec in medicalRecords" :key="rec.id">
+              <tr :class="{ 'row-expanded': expandedRecordId === rec.id }">
+                <td>{{ rec.visit_date || '-' }}</td>
+                <td>{{ rec.department || '-' }}</td>
+                <td class="cell-truncate" :title="rec.chief_complaint">{{ rec.chief_complaint || '-' }}</td>
+                <td class="cell-truncate" :title="rec.diagnosis">{{ rec.diagnosis || '-' }}</td>
+                <td>
+                  <button
+                    class="expand-btn"
+                    @click="toggleRecordExpand(rec.id)"
+                  >
+                    {{ expandedRecordId === rec.id ? '收起 ▲' : '了解更多 ▼' }}
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="expandedRecordId === rec.id" class="detail-row">
+                <td colspan="5">
+                  <div class="record-detail">
+                    <table class="detail-table">
+                      <tr><th>现病史</th><td>{{ rec.present_illness || '未述及' }}</td></tr>
+                      <tr><th>既往史</th><td>{{ rec.past_history || '未述及' }}</td></tr>
+                      <tr><th>体格检查</th><td>{{ rec.physical_exam || '未述及' }}</td></tr>
+                      <tr><th>生命体征</th>
+                        <td>
+                          <template v-if="rec.temperature || rec.pulse || rec.respiration || rec.blood_pressure">
+                            <span v-if="rec.temperature">T {{ rec.temperature }}℃ </span>
+                            <span v-if="rec.pulse">P {{ rec.pulse }}次/分 </span>
+                            <span v-if="rec.respiration">R {{ rec.respiration }}次/分 </span>
+                            <span v-if="rec.blood_pressure">BP {{ rec.blood_pressure }}</span>
+                          </template>
+                          <span v-else>未述及</span>
+                        </td>
+                      </tr>
+                      <tr><th>辅助检查</th><td>{{ rec.auxiliary_exam || '未述及' }}</td></tr>
+                      <tr><th>用药</th><td>{{ rec.medication || '未述及' }}</td></tr>
+                      <tr><th>医嘱</th><td>{{ rec.medical_advice || '未述及' }}</td></tr>
+                      <tr><th>休息天数</th><td>{{ rec.rest_days != null ? rec.rest_days + ' 天' : '未述及' }}</td></tr>
+                      <tr><th>医生</th><td>{{ rec.doctor_name || '未述及' }}</td></tr>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <!-- 转写区域 -->
     <div class="transcribe-area">
@@ -629,5 +740,120 @@ function goBack() {
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(20px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 以往病例 */
+.records-section {
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.records-title {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.records-table-wrap {
+  overflow-x: auto;
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.records-table th,
+.records-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.records-table th {
+  font-weight: 600;
+  color: var(--text);
+  background: var(--code-bg);
+  font-size: 0.78rem;
+}
+
+.records-table td {
+  color: var(--text-h);
+}
+
+.cell-truncate {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-expanded td {
+  background: rgba(var(--accent-rgb, 170, 59, 255), 0.04);
+}
+
+.expand-btn {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.expand-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.detail-row td {
+  padding: 0;
+  border-bottom: 2px solid var(--accent);
+}
+
+.record-detail {
+  padding: 1rem 1.2rem;
+  background: var(--code-bg);
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.detail-table th,
+.detail-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.detail-table th {
+  width: 80px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  background: var(--bg);
+}
+
+.detail-table td {
+  color: var(--text-h);
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 </style>
