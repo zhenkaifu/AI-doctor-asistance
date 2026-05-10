@@ -9,6 +9,24 @@ const route = useRoute()
 
 const patientId = (route.query.patientId as string) || ''
 const patientName = (route.query.patientName as string) || ''
+const patientGender = (route.query.patientGender as string) || ''
+const patientDateOfBirth = (route.query.patientDateOfBirth as string) || ''
+
+/** 从出生日期计算年龄 */
+function calcAge(dateOfBirth: string): number | null {
+  if (!dateOfBirth) return null
+  const birth = new Date(dateOfBirth)
+  if (isNaN(birth.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const m = today.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+    age--
+  }
+  return age
+}
+
+const patientAge = calcAge(patientDateOfBirth)
 
 // ---- 转写组件引用 ----
 const transcriberRef = ref<InstanceType<typeof WhisperTranscriber> | null>(null)
@@ -231,7 +249,7 @@ function goBack() {
 
     <!-- 转写区域 -->
     <div class="transcribe-area">
-      <WhisperTranscriber ref="transcriberRef">
+      <WhisperTranscriber ref="transcriberRef" :patient-gender="patientGender" :patient-age="patientAge">
         <template #extra-controls>
           <button
             class="write-btn"

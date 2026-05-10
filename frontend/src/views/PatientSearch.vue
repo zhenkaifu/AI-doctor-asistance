@@ -72,7 +72,15 @@ function onFormSaved() {
 }
 
 function goToAssistant(patient: Patient) {
-  router.push({ path: '/assistant', query: { patientId: patient.id, patientName: patient.name } })
+  router.push({
+    path: '/assistant',
+    query: {
+      patientId: patient.id,
+      patientName: patient.name,
+      patientGender: patient.gender || '',
+      patientDateOfBirth: patient.date_of_birth || '',
+    },
+  })
 }
 </script>
 
