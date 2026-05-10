@@ -207,6 +207,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             dummy = np.zeros(TARGET_SAMPLES, dtype=np.float32)
                             await process_audio(dummy, is_final=True, start_time=time.time())
                             stream_cache.clear()
+                            vad_cache.clear()
                             last_text = ""
                     is_speaking = True
                     silence_count = 0
@@ -232,6 +233,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 # 句子结束：重置状态
                 if should_finalize:
                     stream_cache.clear()     # 重置 encoder 历史，避免延迟累积
+                    vad_cache.clear()        # 同步清理 VAD cache，避免其内部状态累积
                     last_text = ""
                     is_speaking = False
                     silence_count = 0
