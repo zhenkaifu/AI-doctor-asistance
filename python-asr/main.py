@@ -64,7 +64,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # ---- VAD 断句状态 ----
     is_speaking = False
     silence_count = 0
-    SILENCE_LIMIT = 1
+    SILENCE_LIMIT = 2
 
     HALLUCINATION_BLACKLIST = [
         "谢谢观看", "订阅", "转发", "点赞", "打赏", "明镜", "点点",

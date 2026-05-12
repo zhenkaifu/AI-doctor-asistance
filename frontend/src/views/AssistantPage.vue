@@ -144,7 +144,9 @@ async function extractMedicalRecord() {
   const transcript = list.map((t: any) => `${t.speaker}：${t.text}`).join('\n')
   const adviceRef = transcriberRef.value?.adviceText || ''
 
-  const systemPrompt = `你是专业的病历结构化助手。根据医患对话转写文本，提取以下字段并以 JSON 返回。不编造信息，对话中未提及的字段返回空字符串。
+  const systemPrompt = `你是专业的病历结构化助手。根据医患对话转写文本及医生助手的分析意见，提取以下字段并以 JSON 返回。
+
+优先从转写对话中提取客观事实；若对话未明确提及但医生助手分析意见（「治疗方案」「初步诊断」等章节）中有合理的临床建议，可将其作为参考填入对应字段。不编造信息，确实未提及的字段返回空字符串。
 
 返回格式（严格 JSON，不要 markdown 代码块包裹）：
 {
@@ -152,20 +154,20 @@ async function extractMedicalRecord() {
   "chief_complaint": "主诉（症状+持续时间，例如：腹痛2天）",
   "present_illness": "现病史（起病情况、症状演变、伴随症状、诊治经过）",
   "past_history": "既往史（慢性病、手术史、过敏史、家族史等）",
-  "physical_exam": "体格检查（T、P、R、BP、心肺腹查体等发现，可从对话中推测但明确标注为'未述及'如无）",
+  "physical_exam": "体格检查（T、P、R、BP、心肺腹查体等发现）",
   "temperature": "体温数值（如 36.5，不要单位）",
   "pulse": "脉搏/心率数值",
   "respiration": "呼吸频率数值",
   "blood_pressure": "血压（如 120/80）",
   "auxiliary_exam": "辅助检查结果",
-  "diagnosis": "诊断或初步诊断",
-  "medication": "用药（药品名+用法用量）",
-  "medical_advice": "医嘱/处置建议",
+  "diagnosis": "诊断或初步诊断（优先取分析意见中的诊断）",
+  "medication": "用药（药品名+用法用量；如分析意见的「治疗方案-药物治疗」中有推荐，务必提取）",
+  "medical_advice": "医嘱/处置建议（含非药物治疗、随访建议等；优先综合「治疗方案」章节）",
   "rest_days": "建议休息天数（仅数字）",
   "doctor_name": "医生姓名"
 }
 
-要求：仅从对话中提取，不编造；数值类字段只写数字；体征未述及时留空。`
+要求：充分利用分析意见中的临床建议填充各字段，不要遗漏治疗方案中的用药和医嘱信息；数值类字段只写数字；体征未述及时留空。`
 
   const userContent = `以下为医患对话转写文本：\n\n${transcript}\n\n以下为医生助手的初步分析意见，可作为字段填充参考：\n\n${adviceRef}\n\n请从以上内容中提取病历信息。`
 
@@ -275,10 +277,89 @@ async function confirmSave() {
   saveSuccess.value = true
   showReviewModal.value = false
   fetchMedicalRecords()  // 刷新以往病例列表
+
+  // 打印 PDF 病历单
+  const patient = await fetchPatientDetail()
+  if (patient) {
+    printMedicalRecord(patient, recordForm.value)
+  }
 }
 
 function goBack() {
   router.push('/')
+}
+
+// ---- 患者完整信息（用于打印病历）----
+interface PatientDetail {
+  name: string
+  gender: string | null
+  date_of_birth: string | null
+  phone: string | null
+  id_card_last5: string | null
+  past_history: string | null
+  allergy_history: string | null
+  surgery_history: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
+  address: string | null
+}
+
+async function fetchPatientDetail(): Promise<PatientDetail | null> {
+  if (!patientId) return null
+  const { data, error } = await supabase
+    .from('patients')
+    .select('name, gender, date_of_birth, phone, id_card_last5, past_history, allergy_history, surgery_history, emergency_contact_name, emergency_contact_phone, address')
+    .eq('id', patientId)
+    .single()
+  if (error || !data) return null
+  return data as PatientDetail
+}
+
+function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
+  const age = patient.date_of_birth ? calcAge(patient.date_of_birth) : null
+  const today = new Date().toISOString().split('T')[0]
+
+  const vitals: string[] = []
+  if (record.temperature) vitals.push('T ' + record.temperature + '℃')
+  if (record.pulse) vitals.push('P ' + record.pulse + '次/分')
+  if (record.respiration) vitals.push('R ' + record.respiration + '次/分')
+  if (record.blood_pressure) vitals.push('BP ' + record.blood_pressure)
+
+  const patientName = patient.name || '-'
+  const patientGender = patient.gender || '-'
+  const ageText = age != null ? age + ' 岁' : '-'
+  const phone = patient.phone || '-'
+  const idCard = patient.id_card_last5 || '-'
+  const dob = patient.date_of_birth || '-'
+  const addr = patient.address || '-'
+  let emergency = '-'
+  if (patient.emergency_contact_name) {
+    emergency = patient.emergency_contact_name
+    if (patient.emergency_contact_phone) emergency += ' / ' + patient.emergency_contact_phone
+  }
+  const pHistory = patient.past_history || '-'
+  const allergy = patient.allergy_history || '-'
+  const surgery = patient.surgery_history || '-'
+  const dept = record.department || '未指定'
+  const chief = record.chief_complaint || '-'
+  const present = record.present_illness || '-'
+  const past = record.past_history || '-'
+  const exam = record.physical_exam || '-'
+  const vitalsText = vitals.length > 0 ? vitals.join('  ') : '-'
+  const aux = record.auxiliary_exam || '-'
+  const diag = record.diagnosis || '-'
+  const med = record.medication || '-'
+  const advice = record.medical_advice || '-'
+  const rest = record.rest_days ? record.rest_days + ' 天' : '-'
+
+  const html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>病历单</title>\n<style>\n  * { margin: 0; padding: 0; box-sizing: border-box; }\n  body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; color: #1a1a1a; line-height: 1.7; padding: 2rem; max-width: 800px; margin: 0 auto; }\n  h1 { text-align: center; font-size: 1.4rem; margin-bottom: 0.15rem; letter-spacing: 0.1em; }\n  .meta { text-align: center; font-size: 0.8rem; color: #666; margin-bottom: 1.2rem; }\n  h2 { font-size: 1rem; border-bottom: 2px solid #333; padding-bottom: 0.25rem; margin: 1.2rem 0 0.6rem; }\n  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }\n  th, td { padding: 0.35rem 0.5rem; border: 1px solid #ccc; text-align: left; vertical-align: top; }\n  th { background: #f5f5f5; font-weight: 600; width: 100px; white-space: nowrap; }\n  .info-table td { width: auto; }\n  .signature { margin-top: 2rem; text-align: right; font-size: 0.85rem; }\n  .signature span { display: inline-block; min-width: 80px; border-bottom: 1px solid #333; margin-left: 0.5rem; }\n  @media print {\n    body { padding: 1rem; }\n    @page { margin: 1.5cm; }\n  }\n</style>\n</head>\n<body>\n<h1>门诊病历</h1>\n<div class="meta">就诊日期：' + today + '　|　科室：' + dept + '</div>\n\n<h2>患者基本信息</h2>\n<table class="info-table">\n  <tr><th>姓名</th><td>' + patientName + '</td><th>性别</th><td>' + patientGender + '</td><th>年龄</th><td>' + ageText + '</td></tr>\n  <tr><th>手机号</th><td>' + phone + '</td><th>身份证后5位</th><td>' + idCard + '</td><th>出生日期</th><td>' + dob + '</td></tr>\n  <tr><th>联系地址</th><td colspan="3">' + addr + '</td><th>紧急联系人</th><td>' + emergency + '</td></tr>\n  <tr><th>既往病史</th><td colspan="5">' + pHistory + '</td></tr>\n  <tr><th>过敏史</th><td colspan="5">' + allergy + '</td></tr>\n  <tr><th>手术/外伤史</th><td colspan="5">' + surgery + '</td></tr>\n</table>\n\n<h2>病历记录</h2>\n<table>\n  <tr><th>主诉</th><td>' + chief + '</td></tr>\n  <tr><th>现病史</th><td>' + present + '</td></tr>\n  <tr><th>既往史</th><td>' + past + '</td></tr>\n  <tr><th>体格检查</th><td>' + exam + '</td></tr>\n  <tr><th>生命体征</th><td>' + vitalsText + '</td></tr>\n  <tr><th>辅助检查</th><td>' + aux + '</td></tr>\n  <tr><th>诊断</th><td>' + diag + '</td></tr>\n  <tr><th>用药</th><td>' + med + '</td></tr>\n  <tr><th>医嘱</th><td>' + advice + '</td></tr>\n  <tr><th>休息天数</th><td>' + rest + '</td></tr>\n</table>\n\n<div class="signature">\n  医生签名：<span></span>\n</div>\n</body>\n</html>'
+
+  const w = window.open('', '_blank', 'width=800,height=600')
+  if (!w) return
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => w.print(), 300)
 }
 </script>
 
@@ -310,44 +391,46 @@ function goBack() {
             </tr>
           </thead>
           <tbody>
-            <template v-for="rec in medicalRecords" :key="rec.id">
-              <tr :class="{ 'row-expanded': expandedRecordId === rec.id }">
-                <td>{{ rec.visit_date || '-' }}</td>
-                <td>{{ rec.department || '-' }}</td>
-                <td class="cell-truncate" :title="rec.chief_complaint">{{ rec.chief_complaint || '-' }}</td>
-                <td class="cell-truncate" :title="rec.diagnosis">{{ rec.diagnosis || '-' }}</td>
-                <td>
-                  <button
-                    class="expand-btn"
-                    @click="toggleRecordExpand(rec.id)"
-                  >
-                    {{ expandedRecordId === rec.id ? '收起 ▲' : '了解更多 ▼' }}
-                  </button>
-                </td>
-              </tr>
+            <tr v-for="rec in medicalRecords" :key="rec.id" :class="{ 'row-expanded': expandedRecordId === rec.id }">
+              <td>{{ rec.visit_date || '-' }}</td>
+              <td>{{ rec.department || '-' }}</td>
+              <td class="cell-truncate" :title="rec.chief_complaint">{{ rec.chief_complaint || '-' }}</td>
+              <td class="cell-truncate" :title="rec.diagnosis">{{ rec.diagnosis || '-' }}</td>
+              <td>
+                <button
+                  class="expand-btn"
+                  @click="toggleRecordExpand(rec.id)"
+                >
+                  {{ expandedRecordId === rec.id ? '收起 ▲' : '了解更多 ▼' }}
+                </button>
+              </td>
+            </tr>
+            <template v-for="rec in medicalRecords" :key="'detail-' + rec.id">
               <tr v-if="expandedRecordId === rec.id" class="detail-row">
                 <td colspan="5">
                   <div class="record-detail">
                     <table class="detail-table">
-                      <tr><th>现病史</th><td>{{ rec.present_illness || '未述及' }}</td></tr>
-                      <tr><th>既往史</th><td>{{ rec.past_history || '未述及' }}</td></tr>
-                      <tr><th>体格检查</th><td>{{ rec.physical_exam || '未述及' }}</td></tr>
-                      <tr><th>生命体征</th>
-                        <td>
-                          <template v-if="rec.temperature || rec.pulse || rec.respiration || rec.blood_pressure">
-                            <span v-if="rec.temperature">T {{ rec.temperature }}℃ </span>
-                            <span v-if="rec.pulse">P {{ rec.pulse }}次/分 </span>
-                            <span v-if="rec.respiration">R {{ rec.respiration }}次/分 </span>
-                            <span v-if="rec.blood_pressure">BP {{ rec.blood_pressure }}</span>
-                          </template>
-                          <span v-else>未述及</span>
-                        </td>
-                      </tr>
-                      <tr><th>辅助检查</th><td>{{ rec.auxiliary_exam || '未述及' }}</td></tr>
-                      <tr><th>用药</th><td>{{ rec.medication || '未述及' }}</td></tr>
-                      <tr><th>医嘱</th><td>{{ rec.medical_advice || '未述及' }}</td></tr>
-                      <tr><th>休息天数</th><td>{{ rec.rest_days != null ? rec.rest_days + ' 天' : '未述及' }}</td></tr>
-                      <tr><th>医生</th><td>{{ rec.doctor_name || '未述及' }}</td></tr>
+                      <tbody>
+                        <tr><th>现病史</th><td>{{ rec.present_illness || '未述及' }}</td></tr>
+                        <tr><th>既往史</th><td>{{ rec.past_history || '未述及' }}</td></tr>
+                        <tr><th>体格检查</th><td>{{ rec.physical_exam || '未述及' }}</td></tr>
+                        <tr><th>生命体征</th>
+                          <td>
+                            <template v-if="rec.temperature || rec.pulse || rec.respiration || rec.blood_pressure">
+                              <span v-if="rec.temperature">T {{ rec.temperature }}℃ </span>
+                              <span v-if="rec.pulse">P {{ rec.pulse }}次/分 </span>
+                              <span v-if="rec.respiration">R {{ rec.respiration }}次/分 </span>
+                              <span v-if="rec.blood_pressure">BP {{ rec.blood_pressure }}</span>
+                            </template>
+                            <span v-else>未述及</span>
+                          </td>
+                        </tr>
+                        <tr><th>辅助检查</th><td>{{ rec.auxiliary_exam || '未述及' }}</td></tr>
+                        <tr><th>用药</th><td>{{ rec.medication || '未述及' }}</td></tr>
+                        <tr><th>医嘱</th><td>{{ rec.medical_advice || '未述及' }}</td></tr>
+                        <tr><th>休息天数</th><td>{{ rec.rest_days != null ? rec.rest_days + ' 天' : '未述及' }}</td></tr>
+                        <tr><th>医生</th><td>{{ rec.doctor_name || '未述及' }}</td></tr>
+                      </tbody>
                     </table>
                   </div>
                 </td>
@@ -853,6 +936,7 @@ function goBack() {
 .detail-table td {
   color: var(--text-h);
   line-height: 1.55;
+  white-space: normal;
   overflow-wrap: break-word;
   word-break: break-word;
 }

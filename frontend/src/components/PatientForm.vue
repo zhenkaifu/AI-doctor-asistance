@@ -9,6 +9,12 @@ interface Patient {
   date_of_birth: string | null
   phone: string | null
   id_card_last5: string | null
+  past_history: string | null
+  allergy_history: string | null
+  surgery_history: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
+  address: string | null
   created_at: string
 }
 
@@ -30,6 +36,12 @@ const form = reactive({
   date_of_birth: props.patient?.date_of_birth || '',
   phone: props.patient?.phone || '',
   id_card_last5: props.patient?.id_card_last5 || '',
+  past_history: props.patient?.past_history || '',
+  allergy_history: props.patient?.allergy_history || '',
+  surgery_history: props.patient?.surgery_history || '',
+  emergency_contact_name: props.patient?.emergency_contact_name || '',
+  emergency_contact_phone: props.patient?.emergency_contact_phone || '',
+  address: props.patient?.address || '',
 })
 
 const isEdit = !!props.patient
@@ -41,15 +53,45 @@ async function submitForm() {
     errorMsg.value = '姓名为必填项'
     return
   }
+  if (!form.gender) {
+    errorMsg.value = '性别为必填项'
+    return
+  }
+  if (!form.date_of_birth) {
+    errorMsg.value = '出生日期为必填项'
+    return
+  }
+  if (!form.phone.trim()) {
+    errorMsg.value = '手机号为必填项'
+    return
+  }
+  if (!form.past_history.trim()) {
+    errorMsg.value = '既往病史为必填项'
+    return
+  }
+  if (!form.allergy_history.trim()) {
+    errorMsg.value = '过敏史为必填项'
+    return
+  }
+  if (!form.surgery_history.trim()) {
+    errorMsg.value = '手术/外伤史为必填项'
+    return
+  }
 
   saving.value = true
 
   const payload = {
     name: form.name.trim(),
-    gender: form.gender || null,
-    date_of_birth: form.date_of_birth || null,
-    phone: form.phone || null,
+    gender: form.gender,
+    date_of_birth: form.date_of_birth,
+    phone: form.phone.trim(),
     id_card_last5: form.id_card_last5 || null,
+    past_history: form.past_history.trim(),
+    allergy_history: form.allergy_history.trim(),
+    surgery_history: form.surgery_history.trim(),
+    emergency_contact_name: form.emergency_contact_name.trim() || null,
+    emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+    address: form.address.trim() || null,
   }
 
   let error = null
@@ -95,7 +137,7 @@ async function submitForm() {
         </label>
 
         <label class="field">
-          <span class="field-label">性别</span>
+          <span class="field-label">性别 *</span>
           <select v-model="form.gender" class="field-input">
             <option value="">请选择</option>
             <option value="男">男</option>
@@ -104,13 +146,43 @@ async function submitForm() {
         </label>
 
         <label class="field">
-          <span class="field-label">出生日期</span>
+          <span class="field-label">出生日期 *</span>
           <input v-model="form.date_of_birth" type="date" class="field-input" />
         </label>
 
         <label class="field">
-          <span class="field-label">手机号</span>
+          <span class="field-label">手机号 *</span>
           <input v-model="form.phone" type="text" class="field-input" placeholder="请输入手机号" />
+        </label>
+
+        <label class="field">
+          <span class="field-label">既往病史 *</span>
+          <textarea v-model="form.past_history" class="field-textarea" rows="1" placeholder="如高血压、糖尿病等慢性病史"></textarea>
+        </label>
+
+        <label class="field">
+          <span class="field-label">过敏史 *</span>
+          <textarea v-model="form.allergy_history" class="field-textarea" rows="1" placeholder="如青霉素过敏、海鲜过敏等"></textarea>
+        </label>
+
+        <label class="field">
+          <span class="field-label">手术/外伤史 *</span>
+          <textarea v-model="form.surgery_history" class="field-textarea" rows="1" placeholder="如阑尾切除、骨折史等"></textarea>
+        </label>
+
+        <label class="field">
+          <span class="field-label">紧急联系人</span>
+          <input v-model="form.emergency_contact_name" type="text" class="field-input" placeholder="请输入紧急联系人姓名" />
+        </label>
+
+        <label class="field">
+          <span class="field-label">紧急联系人电话</span>
+          <input v-model="form.emergency_contact_phone" type="text" class="field-input" placeholder="请输入紧急联系人电话" />
+        </label>
+
+        <label class="field">
+          <span class="field-label">联系地址</span>
+          <input v-model="form.address" type="text" class="field-input" placeholder="请输入联系地址" />
         </label>
 
         <label class="field">
@@ -150,7 +222,10 @@ async function submitForm() {
   background: var(--bg);
   border-radius: 12px;
   width: 90%;
-  max-width: 480px;
+  max-width: 420px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   padding: 0;
 }
@@ -159,13 +234,14 @@ async function submitForm() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.2rem 1.5rem;
+  padding: 0.9rem 1.3rem;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .modal-header h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
 }
 
 .close-btn {
@@ -191,16 +267,17 @@ async function submitForm() {
 }
 
 .form-body {
-  padding: 1.2rem 1.5rem;
+  padding: 1rem 1.3rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.8rem;
+  overflow-y: auto;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
 .field-label {
@@ -210,7 +287,7 @@ async function submitForm() {
 }
 
 .field-input {
-  padding: 0.55rem 0.75rem;
+  padding: 0.5rem 0.7rem;
   font-size: 0.9rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -223,16 +300,33 @@ async function submitForm() {
   border-color: var(--accent);
 }
 
+.field-textarea {
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+.field-textarea:focus {
+  border-color: var(--accent);
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
-  padding: 1rem 1.5rem;
+  padding: 0.8rem 1.3rem;
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .cancel-btn {
-  padding: 0.5rem 1.2rem;
+  padding: 0.45rem 1.1rem;
   font-size: 0.9rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -245,7 +339,7 @@ async function submitForm() {
 }
 
 .submit-btn {
-  padding: 0.5rem 1.5rem;
+  padding: 0.45rem 1.3rem;
   font-size: 0.9rem;
   font-weight: 600;
   color: #fff;

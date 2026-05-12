@@ -11,6 +11,12 @@ interface Patient {
   date_of_birth: string | null
   phone: string | null
   id_card_last5: string | null
+  past_history: string | null
+  allergy_history: string | null
+  surgery_history: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
+  address: string | null
   created_at: string
 }
 
