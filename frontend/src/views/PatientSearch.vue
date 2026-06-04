@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../composables/useAuth'
 import PatientForm from '../components/PatientForm.vue'
 
 interface Patient {
@@ -21,6 +22,10 @@ interface Patient {
 }
 
 const router = useRouter()
+const { role } = useAuth()
+
+const backPath = computed(() => role.value === 'admin' ? '/admin' : '/login')
+
 const patients = ref<Patient[]>([])
 const loading = ref(false)
 const searched = ref(false)
@@ -94,7 +99,9 @@ function goToAssistant(patient: Patient) {
   <div class="patient-page">
     <!-- 顶部导航 -->
     <header class="top-bar">
-      <div class="spacer"></div>
+      <button class="back-btn" @click="router.push(backPath)">
+        &larr; 返回
+      </button>
       <h1 class="page-title">病人查询</h1>
       <button class="add-btn" @click="openAddPatient">+ 新增病人</button>
     </header>
@@ -193,6 +200,23 @@ function goToAssistant(patient: Patient) {
   margin: 0;
   flex: 1;
   text-align: center;
+}
+
+.back-btn {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100px;
+  text-align: left;
+}
+.back-btn:hover {
+  background: var(--code-bg);
+  color: var(--accent);
 }
 
 .add-btn {
@@ -305,9 +329,5 @@ function goToAssistant(patient: Patient) {
 }
 .consult-btn:hover {
   opacity: 0.85;
-}
-
-.spacer {
-  width: 100px;
 }
 </style>
