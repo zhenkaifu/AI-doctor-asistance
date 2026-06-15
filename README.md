@@ -1,8 +1,13 @@
+已将敏感信息替换为占位符，并添加了安全提醒。以下是修改后的 `README.md` 内容，可直接用于 GitHub 公开仓库：
+
+---
+
+```markdown
 # 🏥 AI 医生助手 —— 医院后台管理系统
 
 一个基于 **Vue 3 + Supabase + Edge Functions** 的医护人员管理平台，支持管理员增删改查医生/护士账号，并与 Supabase 认证系统深度集成。
 
-> 🔑 本项目已预配置好 Supabase 项目地址与密钥，开箱即用（仅需部署 Edge Functions）
+> 🔑 本项目依赖 Supabase 服务，运行前请自行配置项目地址、密钥并部署 Edge Functions。
 
 ---
 
@@ -24,17 +29,17 @@ cd ../backend && npm install
 ```
 
 ### 3. 配置 Supabase 环境变量（关键！）
-在 `frontend/.env.local` 中填入你的 Supabase 项目信息（已预填，确认即可）：
+在 `frontend/.env.local` 中填入你的 Supabase 项目信息：
 ```env
-# Supabase 项目配置（无需修改，已配置好）
-VITE_SUPABASE_URL=https://vsonucxxgnyoeigqjqno.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_2IfSHAgCWPqunTKW12TInA_n7ELgffH
+# Supabase 项目配置（必填，请替换为你的项目信息）
+VITE_SUPABASE_URL=https://<YOUR_SUPABASE_PROJECT>.supabase.co
+VITE_SUPABASE_ANON_KEY=<YOUR_SUPABASE_ANON_KEY>
 
 # DeepSeek API（用于生成病历单，可选）
-VITE_DEEPSEEK_API_KEY=sk-94caa7c3b6ba4a26873b4d07b3c4417b
+VITE_DEEPSEEK_API_KEY=<YOUR_DEEPSEEK_API_KEY>
 ```
 
-> 💡 注意：`VITE_SUPABASE_ANON_KEY` 是公开密钥，安全；`service_role_key` 仅用于 Edge Functions，不暴露给前端。
+> ⚠️ **安全警告**：`VITE_SUPABASE_ANON_KEY` 是公开密钥，但仍应避免直接提交到公开仓库。建议将 `.env.local` 加入 `.gitignore`，并参考 `.env.example` 提供模板。
 
 ### 4. 启动前端开发服务器
 ```bash
@@ -53,7 +58,7 @@ npm run dev
 - `nurses`（护士）
 
 ### ✅ 数据库初始化（只需一次）
-1. 登录 [Supabase Dashboard](https://supabase.com/dashboard/project/vsonucxxgnyoeigqjqno)
+1. 登录 [Supabase Dashboard](https://supabase.com/dashboard)
 2. 进入 **SQL Editor**，执行以下建表语句（若表不存在）：
 
 ```sql
@@ -85,7 +90,7 @@ CREATE TABLE IF NOT EXISTS nurses (
 );
 ```
 
-> ✅ 提示：你的项目中已有这些表，跳过此步即可。
+> ✅ 提示：如果你的项目中已有这些表，可跳过此步。
 
 ---
 
@@ -105,8 +110,8 @@ cd frontend
 # 1. 登录 Supabase（会自动打开浏览器）
 supabase login
 
-# 2. 关联你的项目（project ref 已预设）
-supabase link --project-ref vsonucxxgnyoeigqjqno
+# 2. 关联你的项目（请将 <YOUR_PROJECT_REF> 替换为实际项目引用 ID）
+supabase link --project-ref <YOUR_PROJECT_REF>
 
 # 3. 部署全部函数（共 4 个）
 supabase functions deploy list-all-staff
@@ -115,7 +120,7 @@ supabase functions deploy update-staff-user
 supabase functions deploy delete-staff-user
 ```
 
-> ✅ 成功标志：终端显示 `Deployed Functions on project vsonucxxgnyoeigqjqno`
+> ✅ 成功标志：终端显示 `Deployed Functions on project <YOUR_PROJECT_REF>`
 
 ---
 
@@ -136,7 +141,7 @@ AI-doctor-asistance/
 ├── frontend/          # Vue 3 前端（Vite）
 │   ├── src/views/StaffManagementPage.vue    ← 员工管理主页面
 │   ├── supabase/functions/                 ← 所有 Edge Functions 源码
-│   └── .env.local                        ← Supabase 密钥配置
+│   └── .env.local                        ← Supabase 密钥配置（需自行创建）
 ├── backend/           # Nest.js 后端（ASR/语音识别服务，可选）
 ├── python-asr/       # Python ASR 推理脚本（可选）
 └── README.md         ← 本文件
@@ -159,6 +164,11 @@ AI-doctor-asistance/
 - ✅ Edge Functions 是否全部 `deploy` 成功  
 - ✅ 浏览器控制台是否报 `403 Forbidden`（说明管理员身份未通过校验）
 
+> 🛡️ **安全提醒**：请勿将真实的 `service_role_key`、`ANON_KEY` 或 API 密钥提交到 Git 仓库。建议使用环境变量并在 `.gitignore` 中排除敏感文件。
+
 ---
 
 © 2026 AI Doctor Assistant — Designed for Hospital Admins, Built with ❤️ and Supabase
+```
+
+所有敏感信息（Supabase URL、anon key、DeepSeek API key、project ref）均已替换为占位符 `<YOUR_...>`，并添加了安全提醒，可安全发布到 GitHub。
