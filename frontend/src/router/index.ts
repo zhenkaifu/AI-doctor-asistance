@@ -7,6 +7,8 @@ declare module 'vue-router' {
     requiresAuth?: boolean
     guest?: boolean
     adminOnly?: boolean
+    nurseOnly?: boolean
+    doctorOnly?: boolean
   }
 }
 
@@ -24,6 +26,24 @@ const router = createRouter({
       name: 'patients',
       component: () => import('../views/PatientSearch.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/nurse',
+      name: 'nurse',
+      component: () => import('../views/NurseDashboardPage.vue'),
+      meta: { requiresAuth: true, nurseOnly: true },
+    },
+    {
+      path: '/nurse/registration',
+      name: 'nurseRegistration',
+      component: () => import('../views/NurseRegistrationPage.vue'),
+      meta: { requiresAuth: true, nurseOnly: true },
+    },
+    {
+      path: '/doctor',
+      name: 'doctor',
+      component: () => import('../views/DoctorDashboardPage.vue'),
+      meta: { requiresAuth: true, doctorOnly: true },
     },
     {
       path: '/assistant',
@@ -70,9 +90,18 @@ router.beforeEach(async (to, _from) => {
 
   // 已登录访问登录页 → 按角色跳转
   if (to.meta.guest && isAuthenticated.value) {
-    const target = role.value === 'admin' ? 'admin' : 'patients'
+    const target =
+      role.value === 'admin' ? 'admin'
+      : role.value === 'nurse' ? 'nurse'
+      : role.value === 'doctor' ? 'doctor'
+      : 'patients'
     console.log('[router.beforeEach] 已登录用户访问登录页 → 跳转', target)
     return { name: target }
+  }
+
+  // 医生访问通用病人查询页 → 跳转医生工作台
+  if (to.name === 'patients' && role.value === 'doctor') {
+    return { name: 'doctor' }
   }
 
   // 进入管理员路由前，刷新权限（后台静默执行，不阻塞路由）
@@ -82,9 +111,32 @@ router.beforeEach(async (to, _from) => {
     refreshRole().catch(e => console.warn('[router.beforeEach] 权限刷新失败:', e))
   }
 
+  // 进入护士路由前，后台刷新权限（不阻塞）
+  if (to.meta.nurseOnly && isAuthenticated.value) {
+    console.log('[router.beforeEach] 进入护士路由，后台刷新权限...')
+    refreshRole().catch(e => console.warn('[router.beforeEach] 权限刷新失败:', e))
+  }
+
+  // 进入医生路由前，后台刷新权限（不阻塞）
+  if (to.meta.doctorOnly && isAuthenticated.value) {
+    refreshRole().catch(e => console.warn('[router.beforeEach] 权限刷新失败:', e))
+  }
+
   // 非管理员访问管理员页面 → 跳转首页
   if (to.meta.adminOnly && role.value !== 'admin') {
     console.log('[router.beforeEach] 非管理员访问 admin 页 → 跳转 /patients')
+    return { name: 'patients' }
+  }
+
+  // 非护士访问护士页面 → 跳转首页
+  if (to.meta.nurseOnly && role.value !== 'nurse') {
+    console.log('[router.beforeEach] 非护士访问 nurse 页 → 跳转 /patients')
+    return { name: 'patients' }
+  }
+
+  // 非医生访问医生页面 → 跳转首页
+  if (to.meta.doctorOnly && role.value !== 'doctor') {
+    console.log('[router.beforeEach] 非医生访问 doctor 页 → 跳转 /patients')
     return { name: 'patients' }
   }
 

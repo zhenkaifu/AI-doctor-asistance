@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { supabase } from '../lib/supabase'
+import { useApiError } from '../composables/useApiError'
+import { callEdgeFunction } from '../lib/session'
 
 const router = useRouter()
-
-const FUNCTIONS_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`
+const { resolveError } = useApiError()
 
 interface Staff {
   id: string
@@ -26,20 +26,10 @@ async function fetchStaff() {
   loading.value = true
   listError.value = ''
   try {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (!token) throw new Error('未登录')
-
-    const res = await fetch(`${FUNCTIONS_BASE}/list-all-staff`, {
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    })
-    if (!res.ok) {
-      const { error } = await res.json()
-      throw new Error(error || '请求失败')
-    }
-    staffList.value = await res.json()
+    staffList.value = await callEdgeFunction<Staff[]>('list-all-staff')
   } catch (e: any) {
-    listError.value = e.message || '加载失败'
+    staffList.value = []
+    listError.value = await resolveError(e, '加载员工列表失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -72,20 +62,19 @@ async function handleAdd() {
 
   adding.value = true
   try {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (!token) throw new Error('未登录')
-
-    const res = await fetch(`${FUNCTIONS_BASE}/create-staff-user`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password, name: name.trim(), role, department: role === 'doctor' ? (department.trim() || null) : null, phone: phone.trim() }),
+    await callEdgeFunction('create-staff-user', {
+      body: {
+        email: email.trim(),
+        password,
+        name: name.trim(),
+        role,
+        department: role === 'doctor' ? (department.trim() || null) : null,
+        phone: phone.trim(),
+      },
     })
-    const result = await res.json()
-    if (!res.ok) throw new Error(result.error || '创建失败')
     showAddModal.value = false
     await fetchStaff()
-  } catch (e: any) { addError.value = e.message || '创建失败' } finally { adding.value = false }
+  } catch (e: any) { addError.value = await resolveError(e, '创建失败') } finally { adding.value = false }
 }
 
 // ---- 编辑弹窗 ----
@@ -116,26 +105,18 @@ async function handleEdit() {
 
   editing.value = true
   try {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (!token) throw new Error('未登录')
-
-    const res = await fetch(`${FUNCTIONS_BASE}/update-staff-user`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await callEdgeFunction('update-staff-user', {
+      body: {
         userId: editingStaff.value.id,
         name: name.trim(),
         phone: phone.trim(),
         department: role === 'doctor' ? (department.trim() || null) : null,
         role,
-      }),
+      },
     })
-    const result = await res.json()
-    if (!res.ok) throw new Error(result.error || '更新失败')
     showEditModal.value = false
     await fetchStaff()
-  } catch (e: any) { editError.value = e.message || '更新失败' } finally { editing.value = false }
+  } catch (e: any) { editError.value = await resolveError(e, '更新失败') } finally { editing.value = false }
 }
 
 // ---- 删除 ----
@@ -147,20 +128,10 @@ async function handleDelete(userId: string) {
   deleteError.value = ''
   deleting.value = true
   try {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (!token) throw new Error('未登录')
-
-    const res = await fetch(`${FUNCTIONS_BASE}/delete-staff-user`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    })
-    const result = await res.json()
-    if (!res.ok) throw new Error(result.error || '删除失败')
+    await callEdgeFunction('delete-staff-user', { body: { userId } })
     deleteConfirmId.value = null
     await fetchStaff()
-  } catch (e: any) { deleteError.value = e.message || '删除失败' } finally { deleting.value = false }
+  } catch (e: any) { deleteError.value = await resolveError(e, '删除失败') } finally { deleting.value = false }
 }
 
 const ROLE_LABELS: Record<string, string> = { admin: '管理员', doctor: '医生', nurse: '护士' }
@@ -215,7 +186,7 @@ onMounted(() => { fetchStaff() })
           </tr>
         </tbody>
       </table>
-      <div v-else-if="!loading" class="empty-msg">暂无医护人员</div>
+      <div v-else-if="!loading && !listError" class="empty-msg">暂无医护人员</div>
       <div v-if="loading" class="loading-msg">加载中…</div>
     </div>
 

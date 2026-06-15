@@ -2,12 +2,18 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '../lib/supabase'
+import { useApiError } from '../composables/useApiError'
+import { useAuth } from '../composables/useAuth'
+import { ensureValidSession, runQuery } from '../lib/session'
 import WhisperTranscriber from '../components/WhisperTranscriber.vue'
 
 const router = useRouter()
 const route = useRoute()
+const { resolveError } = useApiError()
+const { role, user } = useAuth()
 
 const patientId = (route.query.patientId as string) || ''
+const registrationId = computed(() => (route.query.registrationId as string) || '')
 const patientName = (route.query.patientName as string) || ''
 const patientGender = (route.query.patientGender as string) || ''
 const patientDateOfBirth = (route.query.patientDateOfBirth as string) || ''
@@ -51,19 +57,27 @@ interface MedicalRecord {
 
 const medicalRecords = ref<MedicalRecord[]>([])
 const fetchingRecords = ref(false)
+const recordsError = ref('')
 const expandedRecordId = ref<string | null>(null)
 
 async function fetchMedicalRecords() {
   if (!patientId) return
   fetchingRecords.value = true
-  const { data, error } = await supabase
-    .from('medical_records')
-    .select('*')
-    .eq('patient_id', patientId)
-    .order('visit_date', { ascending: false })
-  fetchingRecords.value = false
-  if (!error && data) {
-    medicalRecords.value = data as MedicalRecord[]
+  recordsError.value = ''
+  try {
+    await ensureValidSession()
+    const { data, error } = await runQuery(
+      supabase.from('medical_records').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
+      '加载以往病例',
+    )
+    if (error) throw error
+    medicalRecords.value = (data as MedicalRecord[]) || []
+  } catch (e) {
+    console.error('Fetch medical records error:', e)
+    medicalRecords.value = []
+    recordsError.value = await resolveError(e, '加载以往病例失败，请稍后重试')
+  } finally {
+    fetchingRecords.value = false
   }
 }
 
@@ -230,6 +244,51 @@ async function extractMedicalRecord() {
   }
 }
 
+async function resolveRegistrationId(): Promise<string | null> {
+  if (registrationId.value) return registrationId.value
+  if (!patientId || role.value !== 'doctor' || !user.value?.id) return null
+
+  const { data: doctorData, error: doctorErr } = await runQuery(
+    supabase.from('doctors').select('id').eq('auth_id', user.value.id).maybeSingle(),
+    '查询医生身份',
+    10000,
+  )
+  if (doctorErr || !doctorData?.id) return null
+
+  const { data: regs, error: regErr } = await runQuery(
+    supabase
+      .from('registrations')
+      .select('id')
+      .eq('patient_id', patientId)
+      .eq('doctor_id', doctorData.id)
+      .eq('status', 'waiting')
+      .order('appointment_time', { ascending: false })
+      .limit(1),
+    '查询待完成挂号',
+    10000,
+  )
+  if (regErr || !regs?.length) return null
+  return (regs[0] as { id: string }).id
+}
+
+async function completeRegistration(regId: string): Promise<void> {
+  const { data, error } = await runQuery(
+    supabase
+      .from('registrations')
+      .update({ status: 'completed' })
+      .eq('id', regId)
+      .eq('status', 'waiting')
+      .select('id, status')
+      .maybeSingle(),
+    '更新挂号状态',
+    10000,
+  )
+  if (error) throw error
+  if (!data) {
+    throw new Error('挂号状态更新失败：记录不存在、已完成，或当前账号无权更新')
+  }
+}
+
 async function confirmSave() {
   if (!patientId) {
     saveError.value = '缺少病人 ID，无法保存'
@@ -247,46 +306,62 @@ async function confirmSave() {
   saveError.value = ''
   saving.value = true
 
-  const { error } = await supabase.from('medical_records').insert({
-    patient_id: patientId,
-    department: recordForm.value.department || '未指定',
-    visit_date: new Date().toISOString().split('T')[0],
-    chief_complaint: recordForm.value.chief_complaint,
-    present_illness: recordForm.value.present_illness || null,
-    past_history: recordForm.value.past_history || null,
-    physical_exam: recordForm.value.physical_exam || null,
-    temperature: recordForm.value.temperature ? parseFloat(recordForm.value.temperature) : null,
-    pulse: recordForm.value.pulse ? parseInt(recordForm.value.pulse) : null,
-    respiration: recordForm.value.respiration ? parseInt(recordForm.value.respiration) : null,
-    blood_pressure: recordForm.value.blood_pressure || null,
-    auxiliary_exam: recordForm.value.auxiliary_exam || null,
-    diagnosis: recordForm.value.diagnosis,
-    medication: recordForm.value.medication || null,
-    medical_advice: recordForm.value.medical_advice || null,
-    rest_days: recordForm.value.rest_days ? parseInt(recordForm.value.rest_days) : null,
-    doctor_name: recordForm.value.doctor_name || '未指定',
-  })
+  try {
+    await ensureValidSession()
+    const { error } = await runQuery(
+      supabase.from('medical_records').insert({
+        patient_id: patientId,
+        department: recordForm.value.department || '未指定',
+        visit_date: new Date().toISOString().split('T')[0],
+        chief_complaint: recordForm.value.chief_complaint,
+        present_illness: recordForm.value.present_illness || null,
+        past_history: recordForm.value.past_history || null,
+        physical_exam: recordForm.value.physical_exam || null,
+        temperature: recordForm.value.temperature ? parseFloat(recordForm.value.temperature) : null,
+        pulse: recordForm.value.pulse ? parseInt(recordForm.value.pulse) : null,
+        respiration: recordForm.value.respiration ? parseInt(recordForm.value.respiration) : null,
+        blood_pressure: recordForm.value.blood_pressure || null,
+        auxiliary_exam: recordForm.value.auxiliary_exam || null,
+        diagnosis: recordForm.value.diagnosis,
+        medication: recordForm.value.medication || null,
+        medical_advice: recordForm.value.medical_advice || null,
+        rest_days: recordForm.value.rest_days ? parseInt(recordForm.value.rest_days) : null,
+        doctor_name: recordForm.value.doctor_name || '未指定',
+      }),
+      '保存病历',
+    )
 
-  saving.value = false
+    if (error) {
+      saveError.value = await resolveError(error, '保存病历失败')
+      return
+    }
 
-  if (error) {
-    saveError.value = error.message
-    return
-  }
+    const regId = await resolveRegistrationId()
+    if (regId) {
+      await completeRegistration(regId)
+    }
 
-  saveSuccess.value = true
-  showReviewModal.value = false
-  fetchMedicalRecords()  // 刷新以往病例列表
+    saveSuccess.value = true
+    showReviewModal.value = false
+    fetchMedicalRecords()
 
-  // 打印 PDF 病历单
-  const patient = await fetchPatientDetail()
-  if (patient) {
-    printMedicalRecord(patient, recordForm.value)
+    const patient = await fetchPatientDetail()
+    if (patient) {
+      printMedicalRecord(patient, recordForm.value)
+    }
+  } catch (e) {
+    saveError.value = await resolveError(e, '保存病历失败')
+  } finally {
+    saving.value = false
   }
 }
 
 function goBack() {
-  router.push('/')
+  if (route.query.from === 'doctor' || role.value === 'doctor') {
+    router.push('/doctor')
+  } else {
+    router.push('/')
+  }
 }
 
 // ---- 患者完整信息（用于打印病历）----
@@ -365,96 +440,63 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
 
 <template>
   <div class="assistant-page">
-    <!-- 顶部导航 -->
     <header class="top-bar">
       <button class="back-btn" @click="goBack">
-        <span class="back-arrow">&larr;</span> 返回
+        <span class="back-arrow">&larr;</span> 返回工作台
       </button>
-      <div class="patient-tag" v-if="patientName">
-        <span class="tag-icon">👤</span>
-        <span class="tag-name">{{ patientName }}</span>
+      <div v-if="patientName" class="patient-hero">
+        <div class="avatar">{{ patientName[0] }}</div>
+        <div>
+          <h1 class="patient-name">{{ patientName }}</h1>
+          <p class="patient-meta">
+            {{ patientGender || '-' }}
+            <template v-if="patientAge != null"> · {{ patientAge }} 岁</template>
+          </p>
+        </div>
       </div>
     </header>
 
-    <!-- 以往病例 -->
-    <section v-if="medicalRecords.length > 0" class="records-section">
-      <h3 class="records-title">📋 以往病例（{{ medicalRecords.length }}）</h3>
-      <div class="records-table-wrap">
-        <table class="records-table">
-          <thead>
-            <tr>
-              <th>就诊日期</th>
-              <th>科室</th>
-              <th>主诉</th>
-              <th>诊断</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="rec in medicalRecords" :key="rec.id" :class="{ 'row-expanded': expandedRecordId === rec.id }">
-              <td>{{ rec.visit_date || '-' }}</td>
-              <td>{{ rec.department || '-' }}</td>
-              <td class="cell-truncate" :title="rec.chief_complaint">{{ rec.chief_complaint || '-' }}</td>
-              <td class="cell-truncate" :title="rec.diagnosis">{{ rec.diagnosis || '-' }}</td>
-              <td>
-                <button
-                  class="expand-btn"
-                  @click="toggleRecordExpand(rec.id)"
-                >
-                  {{ expandedRecordId === rec.id ? '收起 ▲' : '了解更多 ▼' }}
-                </button>
-              </td>
-            </tr>
-            <template v-for="rec in medicalRecords" :key="'detail-' + rec.id">
-              <tr v-if="expandedRecordId === rec.id" class="detail-row">
-                <td colspan="5">
-                  <div class="record-detail">
-                    <table class="detail-table">
-                      <tbody>
-                        <tr><th>现病史</th><td>{{ rec.present_illness || '未述及' }}</td></tr>
-                        <tr><th>既往史</th><td>{{ rec.past_history || '未述及' }}</td></tr>
-                        <tr><th>体格检查</th><td>{{ rec.physical_exam || '未述及' }}</td></tr>
-                        <tr><th>生命体征</th>
-                          <td>
-                            <template v-if="rec.temperature || rec.pulse || rec.respiration || rec.blood_pressure">
-                              <span v-if="rec.temperature">T {{ rec.temperature }}℃ </span>
-                              <span v-if="rec.pulse">P {{ rec.pulse }}次/分 </span>
-                              <span v-if="rec.respiration">R {{ rec.respiration }}次/分 </span>
-                              <span v-if="rec.blood_pressure">BP {{ rec.blood_pressure }}</span>
-                            </template>
-                            <span v-else>未述及</span>
-                          </td>
-                        </tr>
-                        <tr><th>辅助检查</th><td>{{ rec.auxiliary_exam || '未述及' }}</td></tr>
-                        <tr><th>用药</th><td>{{ rec.medication || '未述及' }}</td></tr>
-                        <tr><th>医嘱</th><td>{{ rec.medical_advice || '未述及' }}</td></tr>
-                        <tr><th>休息天数</th><td>{{ rec.rest_days != null ? rec.rest_days + ' 天' : '未述及' }}</td></tr>
-                        <tr><th>医生</th><td>{{ rec.doctor_name || '未述及' }}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <div class="content-grid">
+      <!-- 以往病例 -->
+      <section class="panel records-panel">
+        <h3 class="panel-title">以往病例</h3>
+        <div v-if="fetchingRecords" class="panel-status">加载中…</div>
+        <div v-else-if="recordsError" class="panel-error">{{ recordsError }}</div>
+        <div v-else-if="medicalRecords.length === 0" class="panel-empty">暂无历史病历</div>
+        <div v-else class="records-scroll">
+          <div v-for="rec in medicalRecords" :key="rec.id" class="record-card">
+            <div class="record-head">
+              <span class="record-date">{{ rec.visit_date }}</span>
+              <span class="record-dept">{{ rec.department }}</span>
+              <button class="expand-btn" @click="toggleRecordExpand(rec.id)">
+                {{ expandedRecordId === rec.id ? '收起' : '详情' }}
+              </button>
+            </div>
+            <p class="record-brief"><strong>主诉</strong> {{ rec.chief_complaint || '-' }}</p>
+            <p class="record-brief"><strong>诊断</strong> {{ rec.diagnosis || '-' }}</p>
+            <div v-if="expandedRecordId === rec.id" class="record-detail">
+              <p v-if="rec.present_illness"><strong>现病史</strong> {{ rec.present_illness }}</p>
+              <p v-if="rec.medication"><strong>用药</strong> {{ rec.medication }}</p>
+              <p v-if="rec.medical_advice"><strong>医嘱</strong> {{ rec.medical_advice }}</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <!-- 转写区域 -->
-    <div class="transcribe-area">
-      <WhisperTranscriber ref="transcriberRef" :patient-gender="patientGender" :patient-age="patientAge">
-        <template #extra-controls>
-          <button
-            class="write-btn"
-            :disabled="extracting || !canWrite"
-            @click="extractMedicalRecord"
-          >
-            {{ extracting ? '提取中…' : '📝 写入' }}
-          </button>
-          <span v-if="extractError" class="error-msg-inline">{{ extractError }}</span>
-        </template>
-      </WhisperTranscriber>
+      <!-- 问诊转写 -->
+      <section class="panel transcribe-panel">
+        <h3 class="panel-title">问诊助手</h3>
+        <div class="transcribe-area">
+          <WhisperTranscriber ref="transcriberRef" :patient-gender="patientGender" :patient-age="patientAge">
+            <template #extra-controls>
+              <button class="write-btn" :disabled="extracting || !canWrite" @click="extractMedicalRecord">
+                {{ extracting ? '提取中…' : '写入病历' }}
+              </button>
+              <span v-if="extractError" class="error-msg-inline">{{ extractError }}</span>
+            </template>
+          </WhisperTranscriber>
+        </div>
+      </section>
     </div>
 
     <!-- 审核弹窗 -->
@@ -557,101 +599,243 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
 
 <style scoped>
 .assistant-page {
-  max-width: 100%;
-  padding: 0 1rem 2rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
   min-height: 100vh;
+  text-align: left;
+  box-sizing: border-box;
 }
 
 .top-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0;
-  margin-bottom: 0.5rem;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
 .back-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.35rem 0.8rem;
+  padding: 0.4rem 0.85rem;
   font-size: 0.85rem;
   color: var(--text);
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
 }
-.back-btn:hover {
-  background: var(--code-bg);
-  color: var(--accent);
-}
-.back-arrow {
-  font-size: 0.85rem;
-}
+.back-btn:hover { background: var(--code-bg); color: #2563eb; }
 
-.patient-tag {
-  display: inline-flex;
+.patient-hero {
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.8rem;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: 20px;
-  font-size: 0.85rem;
-}
-.tag-icon {
-  font-size: 0.9rem;
-}
-.tag-name {
-  font-weight: 600;
-  color: var(--accent);
+  gap: 0.75rem;
+  flex: 1;
 }
 
-/* 转写区域 */
-.transcribe-area {
-  width: 100%;
+.avatar {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
 }
+
+.patient-name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.patient-meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: stretch;
+  min-height: calc(100vh - 110px);
+}
+
+@media (max-width: 900px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+}
+
+.panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-title {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-status, .panel-empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.panel-error {
+  margin: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+}
+
+.records-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.record-card {
+  padding: 0.75rem 0.85rem;
+  background: var(--code-bg);
+  border-radius: 8px;
+  border-left: 3px solid #6366f1;
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.record-date {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.record-dept {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  background: var(--bg);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.expand-btn {
+  margin-left: auto;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  color: #2563eb;
+}
+
+.record-brief {
+  margin: 0.2rem 0;
+  font-size: 0.8rem;
+  color: var(--text-h);
+  line-height: 1.4;
+}
+
+.record-brief strong {
+  color: var(--text);
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.record-detail {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  font-size: 0.78rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.record-detail p { margin: 0.25rem 0; }
+
+.transcribe-panel .transcribe-area {
+  padding: 0.75rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .transcribe-area :deep(.transcription-container) {
   max-width: 100%;
-  margin: 0.5rem 0 0;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.transcribe-area :deep(.transcript-box) {
+  flex: 1;
+  min-height: 200px;
+}
+
+.records-panel {
+  min-height: 300px;
+}
+
+.transcribe-panel {
+  min-height: 500px;
 }
 
 .write-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.8rem 1.5rem;
-  font-size: 1rem;
+  padding: 0.55rem 1.2rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: #fff;
-  background: #10b981;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: opacity 0.2s, transform 0.15s;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
   white-space: nowrap;
 }
-.write-btn:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-.write-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.write-btn:hover:not(:disabled) { opacity: 0.92; }
+.write-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.error-msg-inline {
-  color: #ef4444;
-  font-size: 0.8rem;
-}
-
-.error-msg {
-  color: #ef4444;
-  font-size: 0.9rem;
-}
+.error-msg-inline { color: #ef4444; font-size: 0.8rem; }
+.error-msg { color: #ef4444; font-size: 0.9rem; }
 
 /* 审核弹窗 */
 .modal-overlay {
@@ -736,9 +920,7 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
   outline: none;
   transition: border-color 0.2s;
 }
-.field-input:focus {
-  border-color: var(--accent);
-}
+.field-input:focus { border-color: #3b82f6; }
 
 .field-textarea {
   padding: 0.5rem 0.7rem;
@@ -752,9 +934,7 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
   font-family: inherit;
   transition: border-color 0.2s;
 }
-.field-textarea:focus {
-  border-color: var(--accent);
-}
+.field-textarea:focus { border-color: #3b82f6; }
 
 .vital-row {
   display: grid;
@@ -791,19 +971,14 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
   font-size: 0.9rem;
   font-weight: 600;
   color: #fff;
-  background: var(--accent);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   border: none;
   border-radius: 6px;
   cursor: pointer;
   transition: opacity 0.2s;
 }
-.confirm-btn:hover {
-  opacity: 0.85;
-}
-.confirm-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.confirm-btn:hover:not(:disabled) { opacity: 0.9; }
+.confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .success-toast {
   position: fixed;
@@ -811,7 +986,7 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
   left: 50%;
   transform: translateX(-50%);
   padding: 0.8rem 2rem;
-  background: #10b981;
+  background: #2563eb;
   color: #fff;
   border-radius: 8px;
   font-weight: 600;
@@ -823,121 +998,5 @@ function printMedicalRecord(patient: PatientDetail, record: MedicalRecordForm) {
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(20px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-/* 以往病例 */
-.records-section {
-  margin-bottom: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.records-title {
-  margin: 0;
-  padding: 0.7rem 1rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-h);
-  background: var(--code-bg);
-  border-bottom: 1px solid var(--border);
-}
-
-.records-table-wrap {
-  overflow-x: auto;
-}
-
-.records-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-
-.records-table th,
-.records-table td {
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.records-table th {
-  font-weight: 600;
-  color: var(--text);
-  background: var(--code-bg);
-  font-size: 0.78rem;
-}
-
-.records-table td {
-  color: var(--text-h);
-}
-
-.cell-truncate {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-expanded td {
-  background: rgba(var(--accent-rgb, 170, 59, 255), 0.04);
-}
-
-.expand-btn {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.75rem;
-  color: var(--accent);
-  background: transparent;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-}
-.expand-btn:hover {
-  background: var(--accent);
-  color: #fff;
-}
-
-.detail-row td {
-  padding: 0;
-  border-bottom: 2px solid var(--accent);
-}
-
-.record-detail {
-  padding: 1rem 1.2rem;
-  background: var(--code-bg);
-}
-
-.detail-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-
-.detail-table th,
-.detail-table td {
-  padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  vertical-align: top;
-}
-
-.detail-table th {
-  width: 80px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  background: var(--bg);
-}
-
-.detail-table td {
-  color: var(--text-h);
-  line-height: 1.55;
-  white-space: normal;
-  overflow-wrap: break-word;
-  word-break: break-word;
 }
 </style>

@@ -23,7 +23,11 @@ async function handleLogin() {
   try {
     await login(email.value.trim(), password.value)
     console.log('[LoginPage] login 返回后 role.value=', role.value, 'isAdmin=', role.value === 'admin')
-    const target = role.value === 'admin' ? '/admin' : '/'
+    const target =
+      role.value === 'admin' ? '/admin'
+      : role.value === 'nurse' ? '/nurse'
+      : role.value === 'doctor' ? '/doctor'
+      : '/'
     console.log('[LoginPage] 即将跳转到', target)
     router.replace(target)
   } catch (e: any) {

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { supabase } from '../lib/supabase'
+import { useApiError } from '../composables/useApiError'
+import { ensureValidSession, runQuery } from '../lib/session'
 
 interface Patient {
   id: string
@@ -24,11 +26,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  saved: []
+  saved: [hint?: { name: string; phone: string; id_card_last5?: string | null }]
 }>()
 
 const saving = ref(false)
 const errorMsg = ref('')
+const { resolveError } = useApiError()
 
 const form = reactive({
   name: props.patient?.name || '',
@@ -80,43 +83,66 @@ async function submitForm() {
 
   saving.value = true
 
-  const payload = {
-    name: form.name.trim(),
-    gender: form.gender,
-    date_of_birth: form.date_of_birth,
-    phone: form.phone.trim(),
-    id_card_last5: form.id_card_last5 || null,
-    past_history: form.past_history.trim(),
-    allergy_history: form.allergy_history.trim(),
-    surgery_history: form.surgery_history.trim(),
-    emergency_contact_name: form.emergency_contact_name.trim() || null,
-    emergency_contact_phone: form.emergency_contact_phone.trim() || null,
-    address: form.address.trim() || null,
+  try {
+    await ensureValidSession()
+
+    const payload = {
+      name: form.name.trim(),
+      gender: form.gender,
+      date_of_birth: form.date_of_birth,
+      phone: form.phone.trim(),
+      id_card_last5: form.id_card_last5 || null,
+      past_history: form.past_history.trim(),
+      allergy_history: form.allergy_history.trim(),
+      surgery_history: form.surgery_history.trim(),
+      emergency_contact_name: form.emergency_contact_name.trim() || null,
+      emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+      address: form.address.trim() || null,
+    }
+
+    let error = null
+
+    if (isEdit && props.patient) {
+      const { error: err } = await runQuery(
+        supabase.from('patients').update(payload).eq('id', props.patient.id),
+        '更新病人',
+      )
+      error = err
+      if (!error) {
+        emit('saved', {
+          name: payload.name,
+          phone: payload.phone,
+          id_card_last5: payload.id_card_last5,
+        })
+        return
+      }
+    } else {
+      const { data, error: err } = await runQuery(
+        supabase.from('patients').insert(payload).select('name, phone, id_card_last5').single(),
+        '新增病人',
+      )
+      error = err
+      if (!error && data) {
+        emit('saved', {
+          name: data.name,
+          phone: data.phone,
+          id_card_last5: data.id_card_last5,
+        })
+        return
+      }
+    }
+
+    if (error) {
+      errorMsg.value = await resolveError(error, '保存病人信息失败')
+      return
+    }
+
+    emit('saved')
+  } catch (e) {
+    errorMsg.value = await resolveError(e, '保存病人信息失败')
+  } finally {
+    saving.value = false
   }
-
-  let error = null
-
-  if (isEdit && props.patient) {
-    const { error: err } = await supabase
-      .from('patients')
-      .update(payload)
-      .eq('id', props.patient.id)
-    error = err
-  } else {
-    const { error: err } = await supabase
-      .from('patients')
-      .insert(payload)
-    error = err
-  }
-
-  saving.value = false
-
-  if (error) {
-    errorMsg.value = error.message
-    return
-  }
-
-  emit('saved')
 }
 </script>
 

@@ -468,13 +468,17 @@ defineExpose({ transcriptionList, adviceText });
 
 <style scoped>
 .transcription-container {
-  max-width: 800px;
-  margin: 2rem auto;
-  padding: 1.5rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 
 .controls {
@@ -499,16 +503,18 @@ defineExpose({ transcriptionList, adviceText });
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.8rem 1.5rem;
-  font-size: 1rem;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  color: white;
-  background: var(--accent);
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
+.record-btn:hover:not(.recording) { opacity: 0.92; }
 
 .record-btn.recording {
   background: #ef4444;
@@ -531,8 +537,9 @@ defineExpose({ transcriptionList, adviceText });
 }
 
 .case-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-bg);
+  border-color: #3b82f6;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
 }
 
 .case-btn:disabled {
@@ -563,15 +570,17 @@ defineExpose({ transcriptionList, adviceText });
 }
 
 .status-badge.tone-progress {
-  color: var(--accent);
+  color: #2563eb;
 }
 
 .transcript-box {
   background: var(--code-bg);
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   padding: 1.5rem;
-  min-height: 300px;
-  max-height: 500px;
+  min-height: 200px;
+  flex: 1;
+  max-height: none;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -597,12 +606,8 @@ defineExpose({ transcriptionList, adviceText });
   margin-top: 1.25rem;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: linear-gradient(
-    145deg,
-    var(--code-bg) 0%,
-    color-mix(in srgb, var(--code-bg) 92%, var(--accent)) 100%
-  );
-  box-shadow: var(--shadow);
+  background: linear-gradient(145deg, var(--code-bg) 0%, rgba(37, 99, 235, 0.04) 100%);
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.06);
   overflow: hidden;
   text-align: left;
 }
@@ -612,7 +617,7 @@ defineExpose({ transcriptionList, adviceText });
   align-items: flex-start;
   gap: 0.85rem;
   padding: 1.1rem 1.25rem;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: rgba(37, 99, 235, 0.08);
   border-bottom: 1px solid var(--border);
 }
 
@@ -653,8 +658,8 @@ defineExpose({ transcriptionList, adviceText });
   padding-bottom: 0.35rem;
   font-size: 0.95rem;
   font-weight: 700;
-  color: var(--accent);
-  border-bottom: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: #2563eb;
+  border-bottom: 2px solid rgba(37, 99, 235, 0.2);
 }
 
 .advice-paragraph {
@@ -682,7 +687,7 @@ defineExpose({ transcriptionList, adviceText });
 }
 
 .advice-list__item::marker {
-  color: var(--accent);
+  color: #3b82f6;
 }
 
 .empty-state {
@@ -699,14 +704,14 @@ defineExpose({ transcriptionList, adviceText });
 }
 
 .transcript-item.is-final {
-  border-left: 3px solid var(--accent);
-  background: rgba(170, 59, 255, 0.05);
+  border-left: 3px solid #3b82f6;
+  background: rgba(37, 99, 235, 0.05);
 }
 
 .speaker {
   font-weight: bold;
   margin-right: 0.25rem;
-  color: var(--accent);
+  color: #2563eb;
 }
 
 .text {
@@ -723,7 +728,7 @@ defineExpose({ transcriptionList, adviceText });
 .cursor {
   display: inline-block;
   width: 2px;
-  background: var(--accent);
+  background: #3b82f6;
   animation: blink 1s step-end infinite;
 }
 
