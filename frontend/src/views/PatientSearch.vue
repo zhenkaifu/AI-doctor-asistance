@@ -30,13 +30,19 @@ interface SavedPatientHint {
   id_card_last5?: string | null
 }
 
-const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+const props = withDefaults(defineProps<{
+  embedded?: boolean
+  variant?: 'default' | 'nurse' | 'doctor'
+}>(), { embedded: false, variant: 'default' })
 
 const router = useRouter()
 const { role } = useAuth()
 const { resolveError } = useApiError()
 
-const isNurse = computed(() => role.value === 'nurse')
+const isNurse = computed(() =>
+  props.variant === 'nurse' || (props.variant === 'default' && role.value === 'nurse'),
+)
+const isDoctorSearch = computed(() => props.variant === 'doctor')
 const backPath = computed(() => role.value === 'admin' ? '/admin' : '/login')
 
 const patients = ref<Patient[]>([])
@@ -170,6 +176,14 @@ function goToAssistant(patient: Patient) {
   })
 }
 
+function goToPatientDetail(patient: Patient) {
+  const path = isNurse.value ? '/nurse/patient' : '/doctor/patient'
+  router.push({
+    path,
+    query: { patientId: patient.id, patientName: patient.name },
+  })
+}
+
 function goToRegistration(patient: Patient) {
   router.push({
     path: '/nurse/registration',
@@ -179,13 +193,13 @@ function goToRegistration(patient: Patient) {
 </script>
 
 <template>
-  <div class="patient-page">
+  <div class="patient-page" :class="{ 'doctor-variant': isDoctorSearch }">
     <header v-if="!props.embedded" class="top-bar">
       <button class="back-btn" @click="router.push(backPath)">&larr; 返回</button>
       <h1 class="page-title">病人查询</h1>
-      <button class="add-btn" @click="openAddPatient">+ 新增病人</button>
+      <button v-if="!isDoctorSearch" class="add-btn" @click="openAddPatient">+ 新增病人</button>
     </header>
-    <div v-else class="embedded-toolbar">
+    <div v-else-if="!isDoctorSearch" class="embedded-toolbar">
       <button class="add-btn" @click="openAddPatient">+ 新增病人</button>
     </div>
 
@@ -239,8 +253,12 @@ function goToRegistration(patient: Patient) {
                   </div>
                 </div>
               </td>
-              <td>
-                <button v-if="isNurse" class="action-btn" @click="goToRegistration(p)">挂号处理</button>
+              <td class="action-cell">
+                <template v-if="isNurse">
+                  <button class="action-btn" @click="goToRegistration(p)">挂号处理</button>
+                  <button class="action-btn view" @click="goToPatientDetail(p)">查看信息</button>
+                </template>
+                <button v-else-if="isDoctorSearch" class="action-btn doctor" @click="goToPatientDetail(p)">查看信息</button>
                 <button v-else class="action-btn primary" @click="goToAssistant(p)">开始问诊</button>
               </td>
             </tr>
@@ -450,4 +468,39 @@ function goToRegistration(patient: Patient) {
   border-color: #2563eb;
 }
 .action-btn.primary:hover { opacity: 0.9; }
+
+.action-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  min-width: 5.5rem;
+}
+
+.action-cell .action-btn {
+  width: 100%;
+  text-align: center;
+}
+
+.action-btn.view {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.08);
+  color: #4f46e5;
+}
+.action-btn.view:hover {
+  background: rgba(99, 102, 241, 0.14);
+}
+
+.doctor-variant .search-input:focus { border-color: #3b82f6; }
+.doctor-variant .search-btn {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+.doctor-variant .action-btn.doctor {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+.doctor-variant .action-btn.doctor:hover {
+  background: rgba(37, 99, 235, 0.14);
+}
 </style>

@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../composables/useAuth'
 import { useApiError } from '../composables/useApiError'
 import { ensureValidSession, runQuery } from '../lib/session'
+import { isAppointmentToday, formatTimeOnly } from '../lib/registration'
+import PatientSearch from './PatientSearch.vue'
 
 const router = useRouter()
 const { user, logout } = useAuth()
@@ -60,7 +62,6 @@ interface MedicalRecord {
   auxiliary_exam: string | null
   medication: string | null
   medical_advice: string | null
-  rest_days: number | null
   doctor_name: string
 }
 
@@ -97,31 +98,6 @@ function patientNameOf(item: QueueItem): string {
   if (!p) return '未知患者'
   const patient = Array.isArray(p) ? p[0] : p
   return patient?.name || '未知患者'
-}
-
-function parseAppointmentTime(dateStr: string): Date | null {
-  if (!dateStr) return null
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(dateStr) && !dateStr.includes('Z') && !/[+-]\d{2}:\d{2}$/.test(dateStr)) {
-    const [datePart, timePart] = dateStr.split('T')
-    const [y, m, d] = datePart.split('-').map(Number)
-    const [hh, mm, ss = 0] = timePart.split(':').map(Number)
-    return new Date(y, m - 1, d, hh, mm, ss)
-  }
-  const d = new Date(dateStr)
-  return isNaN(d.getTime()) ? null : d
-}
-
-function isAppointmentToday(dateStr: string): boolean {
-  const d = parseAppointmentTime(dateStr)
-  if (!d) return false
-  const now = new Date()
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-}
-
-function formatTimeOnly(dateStr: string): string {
-  const d = parseAppointmentTime(dateStr)
-  if (!d) return '-'
-  return d.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 function calcAge(dateOfBirth: string | null): string {
@@ -283,6 +259,14 @@ onMounted(async () => {
         <button class="logout-btn" @click="handleLogout">退出</button>
       </div>
     </header>
+
+    <section class="followup-section">
+      <div class="section-head">
+        <h2>随访查询</h2>
+        <p class="section-desc">搜索病人查看完整信息与以往病例，辅助随访分析</p>
+      </div>
+      <PatientSearch embedded variant="doctor" />
+    </section>
 
     <div class="workspace">
       <!-- 左侧：今日挂号列表 -->
@@ -471,6 +455,31 @@ onMounted(async () => {
 .refresh-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.followup-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.section-head {
+  margin-bottom: 0.85rem;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.section-desc {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text);
 }
 
 .workspace {

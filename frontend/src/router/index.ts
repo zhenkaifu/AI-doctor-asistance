@@ -40,9 +40,21 @@ const router = createRouter({
       meta: { requiresAuth: true, nurseOnly: true },
     },
     {
+      path: '/nurse/patient',
+      name: 'nursePatient',
+      component: () => import('../views/DoctorPatientDetailPage.vue'),
+      meta: { requiresAuth: true, nurseOnly: true },
+    },
+    {
       path: '/doctor',
       name: 'doctor',
       component: () => import('../views/DoctorDashboardPage.vue'),
+      meta: { requiresAuth: true, doctorOnly: true },
+    },
+    {
+      path: '/doctor/patient',
+      name: 'doctorPatient',
+      component: () => import('../views/DoctorPatientDetailPage.vue'),
       meta: { requiresAuth: true, doctorOnly: true },
     },
     {
