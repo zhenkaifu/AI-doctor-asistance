@@ -137,6 +137,13 @@ async function handleDelete(userId: string) {
 const ROLE_LABELS: Record<string, string> = { admin: '管理员', doctor: '医生', nurse: '护士' }
 function roleLabel(role: string) { return ROLE_LABELS[role] || role }
 
+function openStats(s: Staff) {
+  router.push({
+    name: 'adminStaffStats',
+    query: { userId: s.id, role: s.role, name: s.name },
+  })
+}
+
 onMounted(() => { fetchStaff() })
 </script>
 
@@ -174,12 +181,19 @@ onMounted(() => { fetchStaff() })
             <td>{{ s.created_at ? new Date(s.created_at).toLocaleDateString('zh-CN') : '-' }}</td>
             <td class="action-cell">
               <template v-if="s.role !== 'admin'">
-                <button class="action-btn edit" @click="openEditModal(s)">编辑</button>
-                <button v-if="deleteConfirmId !== s.id" class="action-btn del" @click="deleteConfirmId = s.id">删除</button>
-                <span v-else class="confirm-del">
-                  <button class="action-btn del" :disabled="deleting" @click="handleDelete(s.id)">{{ deleting ? '…' : '确认' }}</button>
-                  <button class="action-btn cancel" @click="deleteConfirmId = null">取消</button>
-                </span>
+                <div class="action-group">
+                  <button class="action-btn edit" @click="openEditModal(s)">编辑</button>
+                  <button
+                    v-if="s.role === 'nurse' || s.role === 'doctor'"
+                    class="action-btn stats"
+                    @click="openStats(s)"
+                  >数据</button>
+                  <button v-if="deleteConfirmId !== s.id" class="action-btn del" @click="deleteConfirmId = s.id">删除</button>
+                  <span v-else class="confirm-del">
+                    <button class="action-btn del" :disabled="deleting" @click="handleDelete(s.id)">{{ deleting ? '…' : '确认' }}</button>
+                    <button class="action-btn cancel" @click="deleteConfirmId = null">取消</button>
+                  </span>
+                </div>
               </template>
               <span v-else class="muted">—</span>
             </td>
@@ -258,9 +272,12 @@ onMounted(() => { fetchStaff() })
 .staff-table th { font-weight: 600; color: var(--text); background: var(--code-bg); font-size: 0.82rem; white-space: nowrap; }
 .staff-table td { color: var(--text-h); }
 .action-cell { white-space: nowrap; }
-.action-btn { padding: 0.2rem 0.6rem; font-size: 0.78rem; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; margin-right: 0.3rem; }
+.action-group { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; }
+.action-btn { padding: 0.2rem 0.6rem; font-size: 0.78rem; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; }
 .action-btn.edit { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
 .action-btn.edit:hover { background: rgba(59, 130, 246, 0.2); }
+.action-btn.stats { color: #8b5cf6; background: rgba(139, 92, 246, 0.1); }
+.action-btn.stats:hover { background: rgba(139, 92, 246, 0.2); }
 .action-btn.del { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
 .action-btn.del:hover { background: rgba(239, 68, 68, 0.2); }
 .action-btn.cancel { color: var(--text); background: var(--code-bg); }

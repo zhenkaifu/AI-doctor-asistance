@@ -76,6 +76,12 @@ const router = createRouter({
       component: () => import('../views/StaffManagementPage.vue'),
       meta: { requiresAuth: true, adminOnly: true },
     },
+    {
+      path: '/admin/staff/stats',
+      name: 'adminStaffStats',
+      component: () => import('../views/StaffStatsPage.vue'),
+      meta: { requiresAuth: true, adminOnly: true },
+    },
   ],
 })
 
